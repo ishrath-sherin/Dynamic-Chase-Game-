@@ -1,0 +1,266 @@
+#include "raylib.h"
+#include "raymath.h"
+#include <math.h>
+
+typedef enum {
+    SCREEN_START,
+    SCREEN_GAME,
+    SCREEN_GAMEOVER
+} GameScreen;
+
+#define BORDER 8
+#define GRID_SIZE 40
+
+Rectangle player;
+Rectangle goal;
+Rectangle enemy;
+
+float timeLeft;
+int score;
+float enemySpeed;
+
+int screenWidth;
+int screenHeight;
+
+void ResetGame(void)
+{
+    player.x = screenWidth / 2.0f;
+    player.y = screenHeight / 2.0f;
+
+    enemy.x = 80;
+    enemy.y = 80;
+
+    goal.x = GetRandomValue(BORDER + 40, screenWidth - 80);
+    goal.y = GetRandomValue(BORDER + 40, screenHeight - 80);
+
+    timeLeft = 30.0f;
+    score = 0;
+    enemySpeed = 1.5f;
+}
+
+void DrawBackground(void)
+{
+    DrawRectangleGradientV(
+        0, 0,
+        screenWidth, screenHeight,
+        (Color){8, 10, 20, 255},
+        (Color){2, 2, 8, 255}
+    );
+
+    for (int i = 0; i < 80; i++)
+    {
+        int x = (i * 97) % screenWidth;
+        int y = (i * 173) % screenHeight;
+        DrawCircle(x, y, 2, (Color){80, 120, 255, 50});
+    }
+}
+
+void DrawArenaBackground(void)
+{
+    int left   = BORDER;
+    int top    = BORDER;
+    int right  = screenWidth - BORDER;
+    int bottom = screenHeight - BORDER;
+
+    DrawRectangle(left, top, right - left, bottom - top,
+                  (Color){12, 15, 30, 255});
+
+    for (int x = left; x < right; x += GRID_SIZE)
+        DrawLine(x, top, x, bottom, (Color){40, 50, 80, 50});
+
+    for (int y = top; y < bottom; y += GRID_SIZE)
+        DrawLine(left, y, right, y, (Color){40, 50, 80, 50});
+
+    DrawRectangleLinesEx(
+        (Rectangle){
+            left + 2,
+            top + 2,
+            right - left - 4,
+            bottom - top - 4
+        },
+        2,
+        (Color){70, 100, 160, 80}
+    );
+}
+
+int main(void)
+{
+    screenWidth  = 1280;
+    screenHeight = 720;
+
+    InitWindow(screenWidth, screenHeight, "EchoShade - Shadow Chase");
+    InitAudioDevice();
+    SetTargetFPS(60);
+
+    Sound startSound    = LoadSound("sounds/start.wav");
+    Sound gameOverSound = LoadSound("sounds/gameover.wav");
+
+    player = (Rectangle){ screenWidth/2.0f, screenHeight/2.0f, 42, 42 };
+    goal   = (Rectangle){ 100, 100, 30, 30 };
+    enemy  = (Rectangle){ 60, 60, 48, 48 };
+
+    float playerSpeed = 5.2f;
+    GameScreen screen = SCREEN_START;
+
+    ResetGame();
+
+    while (!WindowShouldClose())
+    {
+        float dt = GetFrameTime();
+
+        if (screen == SCREEN_START)
+        {
+            if (IsKeyPressed(KEY_ENTER))
+            {
+                PlaySound(startSound);
+                ResetGame();
+                screen = SCREEN_GAME;
+            }
+        }
+        else if (screen == SCREEN_GAME)
+        {
+            timeLeft -= dt;
+
+            if (timeLeft <= 0)
+            {
+                PlaySound(gameOverSound);
+                screen = SCREEN_GAMEOVER;
+            }
+
+            if (IsKeyDown(KEY_RIGHT)) player.x += playerSpeed;
+            if (IsKeyDown(KEY_LEFT))  player.x -= playerSpeed;
+            if (IsKeyDown(KEY_UP))    player.y -= playerSpeed;
+            if (IsKeyDown(KEY_DOWN))  player.y += playerSpeed;
+
+            Vector2 dir = {
+                player.x - enemy.x,
+                player.y - enemy.y
+            };
+
+            float len = sqrtf(dir.x*dir.x + dir.y*dir.y);
+            if (len != 0)
+            {
+                dir.x /= len;
+                dir.y /= len;
+            }
+
+            enemy.x += dir.x * enemySpeed;
+            enemy.y += dir.y * enemySpeed;
+
+            enemySpeed = 1.5f + score * 0.28f;
+
+            player.x = Clamp(player.x, BORDER,
+                              screenWidth - player.width - BORDER);
+            player.y = Clamp(player.y, BORDER,
+                              screenHeight - player.height - BORDER);
+
+            enemy.x = Clamp(enemy.x, BORDER,
+                             screenWidth - enemy.width - BORDER);
+            enemy.y = Clamp(enemy.y, BORDER,
+                             screenHeight - enemy.height - BORDER);
+
+            if (CheckCollisionRecs(player, goal))
+            {
+                score++;
+                goal.x = GetRandomValue(BORDER + 40, screenWidth - 80);
+                goal.y = GetRandomValue(BORDER + 40, screenHeight - 80);
+            }
+
+            if (CheckCollisionRecs(player, enemy))
+            {
+                PlaySound(gameOverSound);
+                screen = SCREEN_GAMEOVER;
+            }
+        }
+        else
+        {
+            if (IsKeyPressed(KEY_R))
+            {
+                PlaySound(startSound);
+                ResetGame();
+                screen = SCREEN_GAME;
+            }
+        }
+
+        BeginDrawing();
+
+        DrawBackground();
+        DrawArenaBackground();
+
+        DrawRectangleLinesEx(
+            (Rectangle){
+                BORDER/2.0f,
+                BORDER/2.0f,
+                screenWidth - BORDER,
+                screenHeight - BORDER
+            },
+            BORDER,
+            (Color){60, 70, 110, 255}
+        );
+
+        if (screen == SCREEN_START)
+        {
+            DrawText("ECHOSHADE",
+                     screenWidth/2 - 180,
+                     screenHeight/2 - 120,
+                     52,
+                     SKYBLUE);
+
+            DrawText("ESCAPE THE SHADOW",
+                     screenWidth/2 - 160,
+                     screenHeight/2 - 40,
+                     20,
+                     LIGHTGRAY);
+
+            DrawText("Press ENTER",
+                     screenWidth/2 - 80,
+                     screenHeight/2 + 20,
+                     20,
+                     RAYWHITE);
+        }
+        else if (screen == SCREEN_GAME)
+        {
+            DrawText(TextFormat("Score: %d", score),
+                     30, 25, 22, GOLD);
+
+            DrawText(TextFormat("Time: %.1f", timeLeft),
+                     screenWidth - 190, 25, 22, ORANGE);
+
+            DrawRectangleRec(goal, RED);
+            DrawRectangleRec(enemy, PURPLE);
+            DrawRectangleRec(player, GREEN);
+
+            DrawRectangleLinesEx(enemy, 2, MAROON);
+            DrawRectangleLinesEx(player, 2, SKYBLUE);
+        }
+        else
+        {
+            DrawText("GAME OVER",
+                     screenWidth/2 - 140,
+                     screenHeight/2 - 80,
+                     45,
+                     RED);
+
+            DrawText(TextFormat("Score: %d", score),
+                     screenWidth/2 - 50,
+                     screenHeight/2 - 10,
+                     22,
+                     RAYWHITE);
+
+            DrawText("Press R to Restart",
+                     screenWidth/2 - 110,
+                     screenHeight/2 + 35,
+                     20,
+                     LIME);
+        }
+
+        EndDrawing();
+    }
+
+    UnloadSound(startSound);
+    UnloadSound(gameOverSound);
+    CloseAudioDevice();
+    CloseWindow();
+
+    return 0;
+}
